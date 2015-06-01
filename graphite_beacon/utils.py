@@ -1,8 +1,9 @@
-from re import compile as re
+import re
+import json
 import operator as op
 
 
-NUMBER_RE = re('(\d*\.?\d*)')
+NUMBER_RE = re.compile('(\d*\.?\d*)')
 CONVERT = {
     "bytes": (
         ("TB", 1099511627776), ("GB", 1073741824.0), ("MB", 1048576.0), ("KB", 1024.0),
@@ -42,13 +43,16 @@ DEFAULT_MOD = lambda x: x
 
 HISTORICAL = 'historical'
 OPERATORS = {'>': op.gt, '>=': op.ge, '<': op.lt, '<=': op.le, '==': op.eq, '!=': op.ne}
-RULE_RE = re(
+RULE_RE = re.compile(
     '(critical|warning|normal):\s+(%s)\s+(\d+\.?\d*(?:%s)?|%s)\s*((?:\*|\+|-|\/)\s*\d+\.?\d*)?' %
     (
         "|".join(OPERATORS.keys()),
         "|".join(sorted(CONVERT_HASH.keys(), reverse=True)),
         HISTORICAL,
     ))
+
+
+JSON_COMMENT_RE = re.compile('//\s+.*$', re.M)
 
 
 def convert_to_format(value, frmt=None):
@@ -105,3 +109,8 @@ def parse_rule(rule):
         raise ValueError('Invalid operator: %s for rule %s' % (cond, rule))
     op = OPERATORS[cond]
     return {'level': level, 'op': op, 'value': value, 'mod': mod or DEFAULT_MOD, 'raw': rule}
+
+
+def json_loads(data):
+    """ Parse json data and remove comments from it """
+    return json.loads(JSON_COMMENT_RE.sub('', data))
