@@ -1,18 +1,15 @@
 import os
-from re import compile as re, M
-
 import json
 import logging
+import yaml
 from tornado import ioloop, log
 
 from .alerts import BaseAlert
-from .utils import parse_interval
+from .utils import parse_interval, json_loads
 from .handlers import registry
 
 
 LOGGER = log.gen_log
-
-COMMENT_RE = re('//\s+.*$', M)
 
 
 class Reactor(object):
@@ -23,6 +20,7 @@ class Reactor(object):
         'auth_password': None,
         'auth_username': None,
         'config': 'config.json',
+        'config_format': None,
         'critical_handlers': ['log', 'smtp'],
         'debug': False,
         'format': 'short',
@@ -40,6 +38,11 @@ class Reactor(object):
         'warning_handlers': ['log', 'smtp'],
     }
 
+    parsers = {
+        'json': json_loads,
+        'yaml': yaml.load
+    }
+
     def __init__(self, **options):
         self.alerts = set()
         self.loop = ioloop.IOLoop.instance()
@@ -53,9 +56,11 @@ class Reactor(object):
 
         self.options.update(options)
 
-        self.include_config(self.options.get('config'))
+        config_format = self.options.get('config_format')
+        self.include_config(self.options.get('config'), config_format)
+
         for config in self.options.pop('include', []):
-            self.include_config(config)
+            self.include_config(config, config_format)
 
         LOGGER.setLevel(_get_numeric_log_level(self.options.get('logging', 'info')))
         registry.clean()
@@ -76,16 +81,20 @@ class Reactor(object):
         LOGGER.debug(json.dumps(self.options, indent=2))
         return self
 
-    def include_config(self, config):
+    def include_config(self, config, config_format=None):
         LOGGER.info('Load configuration: %s' % config)
-        if config:
-            try:
-                with open(config) as fconfig:
-                    source = COMMENT_RE.sub("", fconfig.read())
-                    config = json.loads(source)
-                    self.options.update(config)
-            except (IOError, ValueError):
-                LOGGER.error('Invalid config file: %s' % config)
+        parser = self.get_config_parser(config, config_format)
+        try:
+            with open(config) as fh:
+                params = parser(fh.read())
+                self.options.update(params)
+        except Exception as e:
+            LOGGER.error('Invalid config file %s: %s', config, e)
+
+    def get_config_parser(self, config, config_format=None):
+        if config_format is None:
+            config_format = os.path.splitext(config)[1].lstrip('.')
+        return self.parsers.get(config_format, self.parsers['json'])
 
     def reinit_handlers(self, level='warning'):
         for name in self.options['%s_handlers' % level]:
