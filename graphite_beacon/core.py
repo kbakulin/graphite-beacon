@@ -17,6 +17,7 @@ class Reactor(object):
     """ Class description. """
 
     defaults = {
+        'graphite_url': 'http://localhost',
         'graphite_username': None,
         'graphite_password': None,
         'config': 'config.json',
@@ -24,7 +25,6 @@ class Reactor(object):
         'critical_handlers': ['log', 'smtp'],
         'debug': False,
         'format': 'short',
-        'graphite_url': 'http://localhost',
         'history_size': '1day',
         'interval': '10minute',
         'logging': 'info',
@@ -63,6 +63,7 @@ class Reactor(object):
         for config in options.pop('include', []):
             self.include_config(options, config, config_format)
 
+        self.process_graphite_config(options)
 
         LOGGER.setLevel(_get_numeric_log_level(options.get('logging', 'info')))
 
@@ -102,6 +103,28 @@ class Reactor(object):
         if config_format is None:
             config_format = os.path.splitext(config)[1].lstrip('.')
         return self.parsers.get(config_format, self.parsers['json'])
+
+    def process_graphite_config(self, options):
+        graphites = {}
+        if 'graphites' in options:
+            for graphite in options['graphites']:
+                name = graphite.get('name', 'default')
+                graphites[name] = graphite
+        else:
+            # Convert old parameters to the new format for backward compatibility
+            name = 'default'
+            graphites[name] = {
+                'name': name,
+                'url': options.get('graphite_url'),
+                'username': options.get('graphite_username'),
+                'password': options.get('graphite_password')
+            }
+
+        for param in ['graphite_url', 'graphite_username', 'graphite_password']:
+            if param in options:
+                options.pop(param)
+
+        options['graphites'] = graphites
 
     def reinit_handlers(self, options, level='warning'):
         for name in options['%s_handlers' % level]:
